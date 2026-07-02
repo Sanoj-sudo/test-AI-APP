@@ -88,25 +88,47 @@ jobs:
             set -e
             cd ~/test-AI-APP
 
-            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            # --- Ensure Docker is installed (idempotent) ---
+            # Skips entirely if docker already exists; otherwise installs it
+            # (plus the compose plugin) via Docker's official convenience
+            # script. Requires passwordless sudo for the deploy user.
+            if ! command -v docker >/dev/null 2>&1; then
+              echo "Docker not found — installing via get.docker.com ..."
+              curl -fsSL https://get.docker.com | sudo sh
+              sudo systemctl enable --now docker || true
+              # Allow the deploy user to run docker without sudo on FUTURE
+              # logins (group change doesn't apply to this session).
+              sudo usermod -aG docker "$USER" || true
+            fi
 
-            docker compose pull api
+            # The group change above isn't active in this session, so decide
+            # how to invoke docker right now: directly if the socket is
+            # reachable, otherwise fall back to sudo.
+            if docker info >/dev/null 2>&1; then
+              DOCKER="docker"
+            else
+              DOCKER="sudo docker"
+            fi
+
+            echo "$DOCKERHUB_TOKEN" | $DOCKER login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+            $DOCKER compose pull api
             # Rolling restart: recreate ONLY the api container from the image
             # we just pulled. Do NOT use --build here: the server only has
             # docker-compose.yml + nginx/ (see the scp step above), not the
             # Dockerfile or app/ source, and the image is already built and
             # pushed by the build-and-push job. Building here would either fail
             # (no context) or silently deploy stale code from an old clone.
-            docker compose up -d --no-deps api
+            $DOCKER compose up -d --no-deps api
             # Ensure the supporting services exist (no-op if already running).
-            docker compose up -d postgres redis nginx
+            $DOCKER compose up -d postgres redis nginx
             # Recreating api gives it a new container IP. NGINX resolves the
             # "api" upstream once at startup and caches it, so it would keep
             # proxying to the dead old IP (502s) until reloaded. A reload
             # re-resolves the name with zero downtime; fall back to recreating
             # nginx if the reload can't run (e.g. first deploy).
-            docker compose exec -T nginx nginx -s reload \
-              || docker compose up -d --force-recreate --no-deps nginx
+            $DOCKER compose exec -T nginx nginx -s reload \
+              || $DOCKER compose up -d --force-recreate --no-deps nginx
 
             # Wait for health check to pass before declaring success
             for i in $(seq 1 10); do
@@ -118,4 +140,4 @@ jobs:
               sleep 3
             done
 
-            docker image prune -f
+            $DOCKER image prune -f
