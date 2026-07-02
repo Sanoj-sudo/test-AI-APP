@@ -62,23 +62,33 @@ jobs:
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
+        # All config/secrets are forwarded from GitHub into the remote shell
+        # via `envs` below (no .env file lives on the server). docker compose
+        # reads them for variable substitution and injects the app-facing ones
+        # into the api container via its `environment:` block.
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          APP_ENV: production
+          APP_VERSION: 0.1.0
+          LOG_LEVEL: INFO
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          # Names of the env vars above to forward into the remote script.
+          envs: IMAGE_TAG,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,REDIS_PASSWORD,APP_ENV,APP_VERSION,LOG_LEVEL
           script: |
             set -e
             cd ~/test-AI-APP
 
-            # .env lives only on the server (never in git/CI). Update the
-            # image tag CI just built so compose pulls the exact new build.
-            sed -i '/^IMAGE_TAG=/d' .env
-            echo "IMAGE_TAG=${{ github.sha }}" >> .env
-            sed -i '/^DOCKERHUB_USERNAME=/d' .env
-            echo "DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}" >> .env
-
-            docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
 
             docker compose pull api
             # Rolling restart: recreate ONLY the api container from the image

@@ -5,11 +5,16 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: ${DOCKERHUB_USERNAME:-local}/ai-deploy-stack-api:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME:-local}/test-ai-app:${IMAGE_TAG:-latest}
     container_name: api
     restart: unless-stopped
-    env_file: .env
+    # No env_file — all values come from the shell environment (forwarded by
+    # the deploy workflow) via substitution below. The app reads only these
+    # five vars at runtime (see app/main.py).
     environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     depends_on:
