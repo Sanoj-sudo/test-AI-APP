@@ -107,7 +107,12 @@ jobs:
             if docker info >/dev/null 2>&1; then
               DOCKER="docker"
             else
-              DOCKER="sudo docker"
+              # Fresh install: the docker group isn't active in this session
+              # yet, so fall back to sudo. sudo resets the environment by
+              # default, which blanks out the compose substitution vars
+              # (POSTGRES_*, DOCKERHUB_USERNAME, IMAGE_TAG, ...); forward them
+              # explicitly with --preserve-env so `docker compose` sees them.
+              DOCKER="sudo --preserve-env=IMAGE_TAG,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,REDIS_PASSWORD,APP_ENV,APP_VERSION,LOG_LEVEL docker"
             fi
 
             echo "$DOCKERHUB_TOKEN" | $DOCKER login -u "$DOCKERHUB_USERNAME" --password-stdin
